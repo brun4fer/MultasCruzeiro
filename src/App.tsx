@@ -64,7 +64,7 @@ const navItems: { page: Page; label: string; icon: typeof Home }[] = [
 const pageTitles: Record<Page, string> = {
   home: 'Visão geral',
   add: 'Registar multa',
-  month: 'Mês atual',
+  month: 'Gestão mensal',
   payments: 'Pagamentos',
   history: 'Histórico',
   settings: 'Definições'
@@ -81,6 +81,9 @@ function App() {
   const [syncStatus, setSyncStatus] = useState<'loading' | 'saved' | 'saving' | 'error'>(import.meta.env.DEV ? 'saved' : 'loading')
   const etagRef = useRef<string | null>(null)
   const currentMonthKey = monthKeyFromDate(new Date())
+  const managementMonthKey = [...data.months]
+    .filter((month) => month.status === 'open' && month.key <= currentMonthKey)
+    .sort((a, b) => a.key.localeCompare(b.key))[0]?.key ?? currentMonthKey
 
   useEffect(() => {
     if (import.meta.env.DEV) return
@@ -149,9 +152,9 @@ function App() {
     notify('Registo removido.')
   }
 
-  const handleCloseMonth = () => {
-    setData((current) => closeMonth(current, currentMonthKey))
-    notify('Mês fechado. O prazo de 7 dias começou.')
+  const handleCloseMonth = (monthKey: string) => {
+    setData((current) => closeMonth(current, monthKey))
+    notify(`${monthLabel(monthKey)} fechado. O prazo de 7 dias começou.`)
     setPage('payments')
   }
 
@@ -219,7 +222,7 @@ function App() {
     notify('Sessão terminada. A aplicação está em modo de consulta.')
   }
 
-  const currentMonth = data.months.find((month) => month.key === currentMonthKey)
+  const managementMonth = data.months.find((month) => month.key === managementMonthKey)
   const availableNavItems = navItems.filter((item) => isAdmin || item.page !== 'add')
 
   return (
@@ -260,9 +263,9 @@ function App() {
 
           {!authLoading && !isAdmin && <div className="viewer-banner"><Eye size={18} /><span><strong>Modo de consulta</strong> Só o administrador pode alterar os dados.</span><button onClick={() => setLoginOpen(true)}>Entrar</button></div>}
 
-          {page === 'home' && <Dashboard data={data} currentMonthKey={currentMonthKey} setPage={setPage} isAdmin={isAdmin} />}
-          {page === 'add' && isAdmin && <AddFine data={data} currentMonthKey={currentMonthKey} onAdd={addEntry} />}
-          {page === 'month' && <CurrentMonth data={data} currentMonthKey={currentMonthKey} onDelete={deleteEntry} onClose={handleCloseMonth} setPage={setPage} isAdmin={isAdmin} />}
+          {page === 'home' && <Dashboard data={data} currentMonthKey={managementMonthKey} setPage={setPage} isAdmin={isAdmin} />}
+          {page === 'add' && isAdmin && <AddFine data={data} currentMonthKey={managementMonthKey} onAdd={addEntry} />}
+          {page === 'month' && <CurrentMonth data={data} currentMonthKey={managementMonthKey} onDelete={deleteEntry} onClose={handleCloseMonth} setPage={setPage} isAdmin={isAdmin} />}
           {page === 'payments' && <Payments data={data} onPayment={handlePayment} isAdmin={isAdmin} />}
           {page === 'history' && <HistoryPage data={data} />}
           {page === 'settings' && (
@@ -285,7 +288,7 @@ function App() {
       </div>
 
       {toast && <div className="toast"><CheckCircle2 size={19} /> {toast}</div>}
-      {!currentMonth && <div className="toast error"><CircleAlert size={19} /> Não foi possível abrir o mês atual.</div>}
+      {!managementMonth && <div className="toast error"><CircleAlert size={19} /> Não foi possível abrir o mês em gestão.</div>}
       {loginOpen && <LoginModal onClose={() => setLoginOpen(false)} onLogin={handleLogin} />}
     </div>
   )
@@ -463,7 +466,7 @@ function AddFine({ data, currentMonthKey, onAdd }: { data: AppData; currentMonth
   )
 }
 
-function CurrentMonth({ data, currentMonthKey, onDelete, onClose, setPage, isAdmin }: { data: AppData; currentMonthKey: string; onDelete: (id: string) => void; onClose: () => void; setPage: (page: Page) => void; isAdmin: boolean }) {
+function CurrentMonth({ data, currentMonthKey, onDelete, onClose, setPage, isAdmin }: { data: AppData; currentMonthKey: string; onDelete: (id: string) => void; onClose: (monthKey: string) => void; setPage: (page: Page) => void; isAdmin: boolean }) {
   const [filter, setFilter] = useState('')
   const month = data.months.find((candidate) => candidate.key === currentMonthKey)
   const entries = entriesForMonth(data, currentMonthKey)
@@ -475,7 +478,7 @@ function CurrentMonth({ data, currentMonthKey, onDelete, onClose, setPage, isAdm
   const ranked = [...totals.entries()].sort((a, b) => b[1] - a[1])
 
   const confirmClose = () => {
-    if (window.confirm('Fechar este mês? Os valores ficam bloqueados e começa o prazo de 7 dias para pagamento.')) onClose()
+    if (window.confirm(`Fechar ${monthLabel(currentMonthKey)}? Os valores ficam bloqueados e começa o prazo de 7 dias para pagamento.`)) onClose(currentMonthKey)
   }
 
   return (
