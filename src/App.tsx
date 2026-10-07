@@ -48,6 +48,7 @@ import {
   todayInputValue,
   totalsByPerson
 } from './domain'
+import { buildMonthHistoryCsv } from './export'
 import { getRemoteState, getSession, login, logout, putRemoteState } from './remote'
 import type { AppData, FineEntry, FineType, Person, PersonRole } from './types'
 
@@ -267,7 +268,7 @@ function App() {
           {page === 'add' && isAdmin && <AddFine data={data} currentMonthKey={managementMonthKey} onAdd={addEntry} />}
           {page === 'month' && <CurrentMonth data={data} currentMonthKey={managementMonthKey} onDelete={deleteEntry} onClose={handleCloseMonth} setPage={setPage} isAdmin={isAdmin} />}
           {page === 'payments' && <Payments data={data} onPayment={handlePayment} isAdmin={isAdmin} />}
-          {page === 'history' && <HistoryPage data={data} />}
+          {page === 'history' && <HistoryPage data={data} isAdmin={isAdmin} />}
           {page === 'settings' && (
             <SettingsPage
               data={data}
@@ -578,14 +579,18 @@ function Payments({ data, onPayment, isAdmin }: { data: AppData; onPayment: (mon
   )
 }
 
-function HistoryPage({ data }: { data: AppData }) {
+function HistoryPage({ data, isAdmin }: { data: AppData; isAdmin: boolean }) {
   const months = [...data.months].filter((month) => month.status === 'closed').sort((a, b) => b.key.localeCompare(a.key))
   const [expanded, setExpanded] = useState<string | null>(months[0]?.key ?? null)
+  const [exportOpen, setExportOpen] = useState(false)
 
   if (!months.length) return <EmptyState icon={History} title="Histórico vazio" text="Quando fechares um mês, o respetivo resumo fica guardado aqui." />
 
   return (
     <div className="stack-xl">
+      {isAdmin && <div className="history-actions">
+        <button className="primary-button" onClick={() => setExportOpen(true)}><Download size={18} /> Exportar histórico</button>
+      </div>}
       <section className="card history-table-card">
         <div className="table-wrap">
           <table>
@@ -605,6 +610,7 @@ function HistoryPage({ data }: { data: AppData }) {
         </div>
       </section>
       {expanded && <HistoryDetail data={data} monthKey={expanded} />}
+      {exportOpen && <HistoryExportModal data={data} months={months.map((month) => month.key)} onClose={() => setExportOpen(false)} />}
     </div>
   )
 }
@@ -626,6 +632,40 @@ function HistoryDetail({ data, monthKey }: { data: AppData; monthKey: string }) 
       </div>
     </section>
   )
+}
+
+function HistoryExportModal({ data, months, onClose }: { data: AppData; months: string[]; onClose: () => void }) {
+  const [monthKey, setMonthKey] = useState(months[0] ?? '')
+
+  const exportHistory = (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!monthKey) return
+    const csv = buildMonthHistoryCsv(data, monthKey)
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `historico-multas-${monthKey}.csv`
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1_000)
+    onClose()
+  }
+
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
+    <div className="login-modal" role="dialog" aria-modal="true" aria-labelledby="export-title">
+      <button className="modal-close" aria-label="Fechar" onClick={onClose}><X size={20} /></button>
+      <span className="login-icon"><Download size={26} /></span>
+      <p className="eyebrow">Exportação</p>
+      <h2 id="export-title">Exportar histórico</h2>
+      <p>Escolhe o mês. O ficheiro CSV inclui todos os registos e o resumo dos pagamentos desse mês.</p>
+      <form onSubmit={exportHistory}>
+        <label><span>Mês</span><select value={monthKey} onChange={(event) => setMonthKey(event.target.value)}>{months.map((key) => <option value={key} key={key}>{monthLabel(key)}</option>)}</select></label>
+        <button className="primary-button" disabled={!monthKey} type="submit"><Download size={18} /> Descarregar ficheiro</button>
+      </form>
+    </div>
+  </div>
 }
 
 function SettingsPage({ data, onRename, onActive, onAddPerson, onFinePrice, onCloseSeason, onStartSeason, onLogout }: {
